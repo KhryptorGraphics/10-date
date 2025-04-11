@@ -1,0 +1,49 @@
+# Build Stage
+FROM node:18-alpine AS build
+
+# Set working directory
+WORKDIR /usr/src/app
+
+# Copy package.json and package-lock.json
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci
+
+# Copy source files
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Production Stage with Apache
+FROM httpd:2.4-alpine AS production
+
+# Copy built files from build stage to Apache document root
+COPY --from=build /usr/src/app/dist/ /usr/local/apache2/htdocs/
+
+# Create a health check endpoint file
+RUN echo "healthy" > /usr/local/apache2/htdocs/health
+
+# Copy Apache configuration
+COPY apache.conf /etc/apache2/conf.d/
+
+# Update httpd.conf to include our configuration and enable required modules
+RUN echo "Include conf.d/apache.conf" >> /usr/local/apache2/conf/httpd.conf && \
+    sed -i 's/#LoadModule proxy_module/LoadModule proxy_module/' /usr/local/apache2/conf/httpd.conf && \
+    sed -i 's/#LoadModule proxy_http_module/LoadModule proxy_http_module/' /usr/local/apache2/conf/httpd.conf && \
+    sed -i 's/#LoadModule proxy_wstunnel_module/LoadModule proxy_wstunnel_module/' /usr/local/apache2/conf/httpd.conf && \
+    sed -i 's/#LoadModule rewrite_module/LoadModule rewrite_module/' /usr/local/apache2/conf/httpd.conf
+
+# Set permissions
+RUN chown -R www-data:www-data /usr/local/apache2/htdocs/
+
+# Add health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -q -O- http://localhost:80/health || exit 1
+
+# Expose port
+EXPOSE 80
+
+# Start Apache
+CMD ["httpd-foreground"]

@@ -1,0 +1,47 @@
+# Build Stage
+FROM node:18-alpine AS build
+
+WORKDIR /usr/src/app
+
+# Copy package files and install dependencies
+COPY package*.json ./
+RUN npm ci
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN npm run build
+
+# Production Stage
+FROM node:18-alpine AS production
+
+# Set NODE_ENV
+ENV NODE_ENV=production
+
+WORKDIR /usr/src/app
+
+# Copy package files and install production dependencies only
+COPY package*.json ./
+RUN npm ci --only=production
+
+# Copy built files from build stage
+COPY --from=build /usr/src/app/dist ./dist
+COPY --from=build /usr/src/app/nest-cli.json ./
+
+# Create directory for uploads with proper permissions
+RUN mkdir -p /usr/src/app/uploads && \
+    chown -R node:node /usr/src/app
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD wget -q -O- http://localhost:3000/api/health || exit 1
+
+# Use node user instead of root for security
+USER node
+
+# Expose API port
+EXPOSE 3000
+
+# Start the application in production mode
+CMD ["node", "dist/main"]

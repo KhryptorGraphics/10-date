@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@nestjs/config": "^4.0.2",
+    "ioredis": "^5.6.0"
+  }
+}

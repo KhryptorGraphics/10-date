@@ -1,10 +1,19 @@
-import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { Module, Global } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { RedisService } from './redis.service';
 
+@Global()
 @Module({
   imports: [ConfigModule],
-  providers: [RedisService],
+  providers: [
+    {
+      provide: RedisService,
+      useFactory: (configService: ConfigService) => {
+        return new RedisService(configService);
+      },
+      inject: [ConfigService],
+    },
+  ],
   exports: [RedisService],
 })
 export class CacheModule {}

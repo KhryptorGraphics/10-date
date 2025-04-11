@@ -1,106 +1,75 @@
-import { Controller, Get, UseGuards, Query, Param } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { MatchAnalyticsService } from './match-analytics.service';
 import { JwtAuthGuard } from '../../../auth/jwt-auth.guard';
 import { RolesGuard } from '../../../auth/roles.guard';
 import { Roles } from '../../../auth/roles.decorator';
-import { MatchAnalyticsService } from './match-analytics.service';
-import { UserRole } from '../../../user/user.entity/user.entity';
 
-@Controller('admin/analytics/matches')
+Controller('admin/analytics/matches')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.ADMIN)
+@Roles('admin')
 export class MatchAnalyticsController {
   constructor(private readonly matchAnalyticsService: MatchAnalyticsService) {}
 
-  /**
-   * Get overall matching quality metrics
-   */
-  @Get('quality')
-  async getMatchQualityMetrics(
+  @Get('quality-metrics')
+  async getQualityMetrics(
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
   ) {
-    return this.matchAnalyticsService.getMatchQualityMetrics(startDate, endDate);
+    const startDateObj = startDate ? new Date(startDate) : undefined;
+    const endDateObj = endDate ? new Date(endDate) : undefined;
+    
+    return this.matchAnalyticsService.getMatchQualityMetrics(startDateObj, endDateObj);
   }
 
-  /**
-   * Get compatibility distribution
-   */
-  @Get('compatibility/distribution')
-  async getCompatibilityDistribution(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    return this.matchAnalyticsService.getCompatibilityDistribution(startDate, endDate);
+  @Get('compatibility-distribution')
+  async getCompatibilityDistribution() {
+    return this.matchAnalyticsService.getCompatibilityDistribution();
   }
 
-  /**
-   * Get algorithm parameter impact analysis
-   */
-  @Get('parameters/impact')
-  async getParameterImpactAnalysis(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    return this.matchAnalyticsService.getParameterImpactAnalysis(startDate, endDate);
+  @Get('parameter-impact')
+  async getParameterImpact() {
+    return this.matchAnalyticsService.getParameterImpact();
   }
 
-  /**
-   * Get match success rate over time
-   */
-  @Get('success/trend')
-  async getMatchSuccessTrend(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-    @Query('interval') interval: 'day' | 'week' | 'month' = 'day',
+  @Get('success-trend')
+  async getSuccessTrend(
+    @Query('interval') interval?: 'day' | 'week' | 'month',
+    @Query('limit') limit?: number,
   ) {
-    return this.matchAnalyticsService.getMatchSuccessTrend(startDate, endDate, interval);
+    return this.matchAnalyticsService.getSuccessTrend(
+      interval || 'day',
+      limit ? Math.min(Math.max(1, Number(limit)), 90) : 30,
+    );
   }
 
-  /**
-   * Get behavioral data insights
-   */
-  @Get('behavioral/insights')
-  async getBehavioralInsights(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    return this.matchAnalyticsService.getBehavioralInsights(startDate, endDate);
+  @Get('behavioral-insights')
+  async getBehavioralInsights() {
+    return this.matchAnalyticsService.getBehavioralInsights();
   }
 
-  /**
-   * Get detailed stats for a specific user
-   */
-  @Get('user/:userId')
-  async getUserMatchStats(@Param('userId') userId: string) {
-    return this.matchAnalyticsService.getUserMatchStats(userId);
-  }
-  
-  /**
-   * Get algorithm tuning recommendations based on historical data
-   */
-  @Get('tuning/recommendations')
-  async getTuningRecommendations() {
-    return this.matchAnalyticsService.getTuningRecommendations();
-  }
-  
-  /**
-   * Get A/B test comparison results
-   */
-  @Get('ab-tests')
-  async getABTestResults(
-    @Query('testId') testId?: string,
-  ) {
-    return this.matchAnalyticsService.getABTestResults(testId);
-  }
-  
-  /**
-   * Get match engagement metrics
-   */
-  @Get('engagement')
-  async getMatchEngagementMetrics(
-    @Query('startDate') startDate?: string,
-    @Query('endDate') endDate?: string,
-  ) {
-    return this.matchAnalyticsService.getMatchEngagementMetrics(startDate, endDate);
+  @Get('dashboard')
+  async getDashboardData() {
+    const [
+      qualityMetrics,
+      compatibilityDistribution,
+      parameterImpact,
+      successTrend,
+      behavioralInsights,
+    ] = await Promise.all([
+      this.matchAnalyticsService.getMatchQualityMetrics(),
+      this.matchAnalyticsService.getCompatibilityDistribution(),
+      this.matchAnalyticsService.getParameterImpact(),
+      this.matchAnalyticsService.getSuccessTrend(),
+      this.matchAnalyticsService.getBehavioralInsights(),
+    ]);
+    
+    return {
+      qualityMetrics,
+      compatibilityDistribution,
+      parameterImpact,
+      successTrend,
+      behavioralInsights,
+      timestamp: new Date().toISOString(),
+    };
   }
 }

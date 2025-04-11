@@ -1,131 +1,173 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 @Injectable()
-export class RedisService {
-  private readonly redis: Redis;
-  private readonly ttl: number = 3600; // Default TTL = 1 hour
+export class RedisService implements OnModuleDestroy {
+  private readonly client: Redis;
 
   constructor(private readonly configService: ConfigService) {
-    this.redis = new Redis({
-      host: this.configService.get<string>('REDIS_HOST', 'localhost'),
-      port: this.configService.get<number>('REDIS_PORT', 6379),
-      password: this.configService.get<string>('REDIS_PASSWORD', ''),
-      db: this.configService.get<number>('REDIS_DB', 0),
+    this.client = new Redis({
+      host: this.configService.get('redis.host', 'localhost'),
+      port: this.configService.get('redis.port', 6379),
+      password: this.configService.get('redis.password'),
+      db: this.configService.get('redis.db', 0),
+      keyPrefix: this.configService.get('redis.keyPrefix', '10date:'),
+      retryStrategy: (times) => {
+        const delay = Math.min(times * 50, 2000);
+        return delay;
+      },
+    });
+
+    this.client.on('error', (error) => {
+      console.error('Redis connection error:', error);
     });
   }
 
   /**
-   * Set a key-value pair in Redis with optional expiration
+   * Get the Redis client instance
    */
-  async set(key: string, value: any, expireSeconds?: number): Promise<void> {
-    const serializedValue = JSON.stringify(value);
-    if (expireSeconds) {
-      await this.redis.setex(key, expireSeconds, serializedValue);
+  getClient(): Redis {
+    return this.client;
+  }
+
+  /**
+   * Ping Redis to check connection
+   */
+  async ping(): Promise<string> {
+    return this.client.ping();
+  }
+
+  /**
+   * Set a key-value pair in Redis
+   * @param key The key to set
+   * @param value The value to set
+   * @param ttl Time to live in seconds (optional)
+   */
+  async set(key: string, value: any, ttl?: number): Promise<void> {
+    const serializedValue = typeof value === 'object' 
+      ? JSON.stringify(value) 
+      : String(value);
+
+    if (ttl) {
+      await this.client.set(key, serializedValue, 'EX', ttl);
     } else {
-      await this.redis.setex(key, this.ttl, serializedValue);
+      await this.client.set(key, serializedValue);
     }
   }
 
   /**
    * Get a value from Redis by key
+   * @param key The key to get
    */
   async get<T>(key: string): Promise<T | null> {
-    const value = await this.redis.get(key);
+    const value = await this.client.get(key);
+
     if (!value) {
       return null;
     }
-    
-    return JSON.parse(value) as T;
+
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return value as unknown as T;
+    }
   }
 
   /**
    * Delete a key from Redis
+   * @param key The key to delete
    */
   async delete(key: string): Promise<void> {
-    await this.redis.del(key);
+    await this.client.del(key);
   }
 
   /**
-   * Delete keys matching a pattern
+   * Delete keys matching a pattern from Redis
+   * @param pattern The pattern to match keys
    */
   async deletePattern(pattern: string): Promise<void> {
-    const keys = await this.redis.keys(pattern);
+    const keys = await this.client.keys(pattern);
+    
     if (keys.length > 0) {
-      await this.redis.del(...keys);
+      await this.client.del(...keys);
     }
   }
 
   /**
-   * Check if key exists
+   * Check if a key exists in Redis
+   * @param key The key to check
    */
   async exists(key: string): Promise<boolean> {
-    const exists = await this.redis.exists(key);
-    return exists === 1;
+    const result = await this.client.exists(key);
+    return result === 1;
   }
 
   /**
-   * Set expiration time on key
+   * Set a field in a hash stored at key
+   * @param key The key of the hash
+   * @param field The field to set
+   * @param value The value to set
    */
-  async expire(key: string, seconds: number): Promise<void> {
-    await this.redis.expire(key, seconds);
+  async hset(key: string, field: string, value: any): Promise<void> {
+    const serializedValue = typeof value === 'object' 
+      ? JSON.stringify(value) 
+      : String(value);
+      
+    await this.client.hset(key, field, serializedValue);
   }
 
   /**
-   * Get remaining TTL of a key
+   * Get a field from a hash stored at key
+   * @param key The key of the hash
+   * @param field The field to get
    */
-  async ttlOf(key: string): Promise<number> {
-    return this.redis.ttl(key);
-  }
+  async hget<T>(key: string, field: string): Promise<T | null> {
+    const value = await this.client.hget(key, field);
 
-  /**
-   * Increment a value
-   */
-  async increment(key: string, by: number = 1): Promise<number> {
-    return this.redis.incrby(key, by);
-  }
-
-  /**
-   * Sets multiple hash fields to multiple values
-   */
-  async hmset(key: string, obj: Record<string, any>): Promise<void> {
-    const serialized = Object.entries(obj).reduce(
-      (result, [field, value]) => {
-        result[field] = typeof value === 'object' 
-          ? JSON.stringify(value) 
-          : String(value);
-        return result;
-      },
-      {} as Record<string, string>
-    );
-    
-    await this.redis.hmset(key, serialized);
-  }
-
-  /**
-   * Gets all the fields and values in a hash
-   */
-  async hgetall<T>(key: string): Promise<T | null> {
-    const data = await this.redis.hgetall(key);
-    
-    if (!data || Object.keys(data).length === 0) {
+    if (!value) {
       return null;
     }
-    
-    // Try to parse JSON values
-    const parsed = Object.entries(data).reduce(
-      (result, [field, value]) => {
-        try {
-          result[field] = JSON.parse(value);
-        } catch {
-          result[field] = value;
-        }
-        return result;
-      },
-      {} as Record<string, any>
-    );
-    
-    return parsed as T;
+
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return value as unknown as T;
+    }
+  }
+
+  /**
+   * Get all fields and values from a hash
+   * @param key The key of the hash
+   */
+  async hgetall<T>(key: string): Promise<Record<string, T>> {
+    const hash = await this.client.hgetall(key);
+    const result: Record<string, T> = {};
+
+    for (const field in hash) {
+      try {
+        result[field] = JSON.parse(hash[field]) as T;
+      } catch {
+        result[field] = hash[field] as unknown as T;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Run a native Redis command
+   * @param command The command to run
+   * @param args The arguments for the command
+   */
+  async runNativeCommand(command: string, ...args: any[]): Promise<any> {
+    return this.client.call(command, ...args);
+  }
+
+  /**
+   * Cleanup resources when module is destroyed
+   */
+  async onModuleDestroy(): Promise<void> {
+    await this.client.quit();
   }
 }
