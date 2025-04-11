@@ -13,6 +13,7 @@ import { MediaModule } from './media/media.module';
 import { AdminModule } from './admin/admin.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { CacheModule } from './cache/cache.module';
+import { CommonModule } from './common/common.module';
 import { HealthModule } from './health/health.module';
 import configuration from './config/configuration';
 
@@ -33,6 +34,7 @@ import configuration from './config/configuration';
     AdminModule,
     AnalyticsModule,
     CacheModule,
+    CommonModule,
     HealthModule,
   ],
   controllers: [AppController],

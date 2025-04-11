@@ -35,6 +35,12 @@ export type StackParamList = {
   Subscription: undefined;
   MatchPreferences: undefined;
   EditProfile: undefined;
+  // Privacy Center screens
+  PrivacyCenter: undefined;
+  DataAccess: undefined;
+  ConsentManagement: undefined;
+  AccountManagement: undefined;
+  PrivacyInformation: undefined;
 };
 
 // Navigation Props for Auth Screens
@@ -132,4 +138,30 @@ export type MatchPreferencesScreenProps = {
 export type EditProfileScreenProps = {
   navigation: StackNavigationProp<'EditProfile'>;
   route: StackRouteProp<'EditProfile'>;
+};
+
+// Privacy Center Screen Props
+export type PrivacyCenterScreenProps = {
+  navigation: StackNavigationProp<'PrivacyCenter'>;
+  route: StackRouteProp<'PrivacyCenter'>;
+};
+
+export type DataAccessScreenProps = {
+  navigation: StackNavigationProp<'DataAccess'>;
+  route: StackRouteProp<'DataAccess'>;
+};
+
+export type ConsentManagementScreenProps = {
+  navigation: StackNavigationProp<'ConsentManagement'>;
+  route: StackRouteProp<'ConsentManagement'>;
+};
+
+export type AccountManagementScreenProps = {
+  navigation: StackNavigationProp<'AccountManagement'>;
+  route: StackRouteProp<'AccountManagement'>;
+};
+
+export type PrivacyInformationScreenProps = {
+  navigation: StackNavigationProp<'PrivacyInformation'>;
+  route: StackRouteProp<'PrivacyInformation'>;
 };

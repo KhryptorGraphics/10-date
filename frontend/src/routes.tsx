@@ -8,6 +8,7 @@ const ProfilePage = React.lazy(() => import('./pages/ProfilePage'));
 const MatchPage = React.lazy(() => import('./pages/MatchPage'));
 const ChatPage = React.lazy(() => import('./pages/ChatPage'));
 const SubscriptionPage = React.lazy(() => import('./pages/SubscriptionPage'));
+const PrivacyCenterPage = React.lazy(() => import('./pages/PrivacyCenterPage'));
 
 export default function AppRoutes() {
   return (
@@ -21,6 +22,7 @@ export default function AppRoutes() {
           <Route path="/match" element={<MatchPage />} />
           <Route path="/chat" element={<ChatPage />} />
           <Route path="/subscribe" element={<SubscriptionPage />} />
+          <Route path="/privacy" element={<PrivacyCenterPage />} />
         </Routes>
       </React.Suspense>
     </Router>

@@ -105,6 +105,13 @@ const HomeTabNavigator = () => {
   );
 };
 
+// Privacy Center Screens (to be implemented)
+const PrivacyCenterScreen = () => <View />;
+const DataAccessScreen = () => <View />;
+const ConsentManagementScreen = () => <View />;
+const AccountManagementScreen = () => <View />;
+const PrivacyInformationScreen = () => <View />;
+
 // Main Stack Navigator (after authentication)
 const MainNavigator = () => {
   return (
@@ -120,6 +127,13 @@ const MainNavigator = () => {
       <Stack.Screen name="Subscription" component={SubscriptionScreen} />
       <Stack.Screen name="MatchPreferences" component={MatchPreferencesScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+      
+      {/* Privacy Center Screens */}
+      <Stack.Screen name="PrivacyCenter" component={PrivacyCenterScreen} />
+      <Stack.Screen name="DataAccess" component={DataAccessScreen} />
+      <Stack.Screen name="ConsentManagement" component={ConsentManagementScreen} />
+      <Stack.Screen name="AccountManagement" component={AccountManagementScreen} />
+      <Stack.Screen name="PrivacyInformation" component={PrivacyInformationScreen} />
     </Stack.Navigator>
   );
 };
