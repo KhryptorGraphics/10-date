@@ -1,9 +1,11 @@
-import { Entity, PrimaryGeneratedColumn, Column } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToMany, JoinTable } from 'typeorm';
+import { InterestEntity } from './interest.entity';
 
 @Entity('users')
 export class UserEntity {
   @Column({ default: 'user' })
   role: 'user' | 'admin';
+
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
@@ -45,4 +47,34 @@ export class UserEntity {
 
   @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
   createdAt: Date;
+
+  // New fields for AI matching
+  @Column('json', { nullable: true })
+  behavioralData: {
+    averageSwipeTime?: number;
+    swipeCount?: number;
+    likeCount?: number;
+    dislikeCount?: number;
+    swipeRatio?: number;
+    activeHours?: number[];
+    responseRate?: number;
+    profileViewDuration?: number;
+  };
+
+  @Column('json', { nullable: true })
+  implicitPreferences: {
+    agePreference?: { min: number; max: number; avg: number; weight: number };
+    distancePreference?: { max: number; weight: number };
+    interestFactors?: { [interestId: string]: number };
+    personalityFactors?: { [trait: string]: number };
+  };
+  
+  // Relationship with interests
+  @ManyToMany(() => InterestEntity)
+  @JoinTable({
+    name: 'user_interests',
+    joinColumn: { name: 'user_id', referencedColumnName: 'id' },
+    inverseJoinColumn: { name: 'interest_id', referencedColumnName: 'id' }
+  })
+  interests: InterestEntity[];
 }

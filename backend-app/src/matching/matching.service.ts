@@ -4,6 +4,8 @@ import { Repository, Not, In } from 'typeorm';
 import { SwipeEntity } from './match.entity/swipe.entity';
 import { MatchEntity } from './match.entity/match.entity';
 import { UserEntity } from '../user/user.entity/user.entity';
+import { MatchingFactorsService } from './services/matching-factors.service';
+import { BehavioralTrackingService } from '../analytics/services/behavioral-tracking.service';
 
 @Injectable()
 export class MatchingService {
@@ -14,9 +16,20 @@ export class MatchingService {
     private readonly matchRepo: Repository<MatchEntity>,
     @InjectRepository(UserEntity)
     private readonly userRepo: Repository<UserEntity>,
+    private readonly matchingFactorsService: MatchingFactorsService,
+    private readonly behavioralTrackingService: BehavioralTrackingService,
   ) {}
 
-  async swipe(userId: string, targetUserId: string, direction: 'like' | 'dislike') {
+  async swipe(
+    userId: string, 
+    targetUserId: string, 
+    direction: 'like' | 'dislike',
+    metadata?: {
+      swipeTime: number;
+      profileViewDuration: number;
+      viewedSections?: string[];
+    }
+  ) {
     // Save the swipe
     const swipe = this.swipeRepo.create({
       fromUserId: userId,
@@ -24,6 +37,24 @@ export class MatchingService {
       direction,
     });
     await this.swipeRepo.save(swipe);
+
+    // Track behavioral data if metadata is provided
+    if (metadata) {
+      await this.behavioralTrackingService.trackSwipeEvent(
+        userId, 
+        targetUserId, 
+        direction, 
+        metadata
+      );
+      
+      // Periodically update implicit preferences
+      // Don't do this on every swipe to reduce DB load
+      const shouldUpdate = Math.random() < 0.2; // 20% chance
+      if (shouldUpdate) {
+        this.behavioralTrackingService.updateImplicitPreferences(userId)
+          .catch(err => console.error('Failed to update implicit preferences:', err));
+      }
+    }
 
     // If this was a 'like', check if there's a mutual like
     if (direction === 'like') {
@@ -81,8 +112,11 @@ export class MatchingService {
   }
 
   async getRecommendations(userId: string) {
-    // Get current user
-    const user = await this.userRepo.findOne({ where: { id: userId } });
+    // Get current user with interests
+    const user = await this.userRepo.findOne({ 
+      where: { id: userId },
+      relations: ['interests']
+    });
     if (!user) return [];
 
     // Get users who haven't been swiped on yet
@@ -94,17 +128,94 @@ export class MatchingService {
     // Add current user to excluded list
     swipedUserIds.push(userId);
 
-    // Find users not in the swiped list - simple recommendation for now
-    const recommendedUsers = await this.userRepo.find({
+    // Find potential matches not in the swiped list
+    const potentialMatches = await this.userRepo.find({
       where: { id: Not(In(swipedUserIds)) },
-      take: 10, // Limit to 10 recommendations
+      relations: ['interests'],
     });
-
-    return recommendedUsers.map(user => ({
-      userId: user.id,
-      name: user.name,
-      age: user.age,
-      bio: user.bio,
-    }));
+    
+    // Enhance recommendations with compatibility scoring
+    const enhancedRecommendations = await Promise.all(
+      potentialMatches.map(async match => {
+        // Calculate compatibility score
+        const compatibilityScore = await this.matchingFactorsService.calculateOverallCompatibility(
+          user, 
+          match
+        );
+        
+        // Calculate common interests for display
+        let commonInterests: string[] = [];
+        if (user.interests && match.interests) {
+          const userInterestIds = user.interests.map(i => i.id);
+          commonInterests = match.interests
+            .filter(i => userInterestIds.includes(i.id))
+            .map(i => i.name);
+        }
+        
+        return {
+          userId: match.id,
+          name: match.name,
+          age: match.age,
+          bio: match.bio,
+          compatibilityScore: Math.round(compatibilityScore * 100), // Convert to percentage
+          commonInterests
+        };
+      })
+    );
+    
+    // Sort by compatibility score (highest first) and return top matches
+    return enhancedRecommendations
+      .sort((a, b) => b.compatibilityScore - a.compatibilityScore)
+      .slice(0, 10); // Limit to 10 recommendations
+  }
+  
+  async getMatchFactors(userId: string, targetUserId: string) {
+    // Get both users with their interests
+    const user = await this.userRepo.findOne({
+      where: { id: userId },
+      relations: ['interests']
+    });
+    
+    const targetUser = await this.userRepo.findOne({
+      where: { id: targetUserId },
+      relations: ['interests']
+    });
+    
+    if (!user || !targetUser) {
+      return { error: 'One or both users not found' };
+    }
+    
+    // Calculate compatibility factors
+    const interestScore = await this.matchingFactorsService.calculateInterestCompatibility(user, targetUser);
+    const demographicScore = this.matchingFactorsService.calculateDemographicCompatibility(user, targetUser);
+    const locationScore = this.matchingFactorsService.calculateLocationCompatibility(user, targetUser);
+    
+    // Calculate overall score
+    const overallScore = await this.matchingFactorsService.calculateOverallCompatibility(user, targetUser);
+    
+    // Get common interests
+    let commonInterests: string[] = [];
+    if (user.interests && targetUser.interests) {
+      const userInterestIds = user.interests.map(i => i.id);
+      commonInterests = targetUser.interests
+        .filter(i => userInterestIds.includes(i.id))
+        .map(i => i.name);
+    }
+    
+    return {
+      overallCompatibility: Math.round(overallScore * 100),
+      factors: {
+        interests: {
+          score: Math.round(interestScore * 100),
+          common: commonInterests
+        },
+        demographics: {
+          score: Math.round(demographicScore * 100)
+        },
+        location: {
+          score: Math.round(locationScore * 100)
+        }
+      }
+    };
   }
 }

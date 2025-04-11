@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Param } from '@nestjs/common';
+import { Controller, Post, Get, Body, Param, Query } from '@nestjs/common';
 import { MatchingService } from './matching.service';
 
 @Controller('matching')
@@ -10,8 +10,13 @@ export class MatchingController {
     @Body('userId') userId: string,
     @Body('targetUserId') targetUserId: string,
     @Body('direction') direction: 'like' | 'dislike',
+    @Body('metadata') metadata?: {
+      swipeTime: number;
+      profileViewDuration: number;
+      viewedSections?: string[];
+    }
   ) {
-    return this.matchingService.swipe(userId, targetUserId, direction);
+    return this.matchingService.swipe(userId, targetUserId, direction, metadata);
   }
 
   @Get('matches/:userId')
@@ -20,7 +25,19 @@ export class MatchingController {
   }
 
   @Get('recommendations/:userId')
-  async getRecommendations(@Param('userId') userId: string) {
+  async getRecommendations(
+    @Param('userId') userId: string,
+    @Query('limit') limit: number = 10,
+    @Query('includeDetails') includeDetails: boolean = false
+  ) {
     return this.matchingService.getRecommendations(userId);
+  }
+  
+  @Get('match-factors/:userId/:targetUserId')
+  async getMatchFactors(
+    @Param('userId') userId: string,
+    @Param('targetUserId') targetUserId: string
+  ) {
+    return this.matchingService.getMatchFactors(userId, targetUserId);
   }
 }
