@@ -90,14 +90,39 @@ export const api = createApi({
       }),
       providesTags: ['Match'],
     }),
+    
+    // New recommendation endpoint with enhanced AI matching
+    getRecommendations: builder.query({
+      query: ({ userId, limit = 10, includeDetails = true }) => ({
+        url: `matching/recommendations/${userId}`,
+        params: { limit, includeDetails }
+      }),
+      providesTags: ['Match'],
+    }),
+    
+    // New endpoint to get detailed match factors between users
+    getMatchFactors: builder.query({
+      query: ({ userId, targetUserId }) => 
+        `matching/match-factors/${userId}/${targetUserId}`,
+      providesTags: (result, error, { userId, targetUserId }) => 
+        [{ type: 'Match', id: `${userId}-${targetUserId}` }],
+    }),
+    
+    // Enhanced swipe endpoint that includes behavioral data
     swipeProfile: builder.mutation({
-      query: ({ userId, direction, isSuperLike }) => ({
+      query: ({ userId, targetUserId, direction, metadata }) => ({
         url: 'matching/swipe',
         method: 'POST',
-        body: { userId, direction, isSuperLike },
+        body: { 
+          userId, 
+          targetUserId, 
+          direction,
+          metadata, // Behavioral data (swipe time, view duration, etc.)
+        },
       }),
       invalidatesTags: ['Match'],
     }),
+    
     getMatches: builder.query({
       query: () => 'matching/matches',
       providesTags: ['Match'],
@@ -152,6 +177,8 @@ export const {
   useGetProfileQuery,
   useUpdateProfileMutation,
   useGetPotentialMatchesQuery,
+  useGetRecommendationsQuery, // New hook for enhanced recommendations
+  useGetMatchFactorsQuery, // New hook for match factors
   useSwipeProfileMutation,
   useGetMatchesQuery,
   useGetConversationsQuery,

@@ -19,7 +19,7 @@ import {
   Alert,
 } from 'react-native';
 import { useAppSelector, useAppDispatch } from '../../store';
-import { useGetPotentialMatchesQuery, useSwipeProfileMutation } from '../../store/api';
+import { useGetRecommendationsQuery, useSwipeProfileMutation, useGetMatchFactorsQuery } from '../../store/api';
 import { DiscoverScreenProps } from '../../types/navigation';
 import { primaryColors, neutralColors, spacing, typography, shadows } from '../../theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,9 +31,10 @@ const SCREEN_HEIGHT = Dimensions.get('window').height;
 // Swipe threshold - determines when a card is considered "swiped"
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
 
-// Mock potential match data type
+// Enhanced potential match data type
 interface PotentialMatch {
   id: string;
+  userId: string;
   name: string;
   age: number;
   distance: number;
@@ -41,24 +42,39 @@ interface PotentialMatch {
   interests: string[];
   photos: string[];
   verified: boolean;
+  // New fields from AI matching
+  compatibilityScore: number;
+  commonInterests: string[];
 }
 
 const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
+  // User ID from auth state
+  const { user } = useAppSelector(state => state.auth);
+  const userId = user?.id;
+  
   // State variables
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [matchAnimation, setMatchAnimation] = useState(false);
   const [matchedUser, setMatchedUser] = useState<PotentialMatch | null>(null);
   
-  // RTK Query hook for fetching potential matches
+  // State for tracking swipe behavior
+  const [swipeStartTime, setSwipeStartTime] = useState<number | null>(null);
+  const [viewStartTime, setViewStartTime] = useState<number>(Date.now());
+  const [viewedSections, setViewedSections] = useState<string[]>([]);
+  
+  // RTK Query hook for fetching potential matches with AI recommendations
   const { 
-    data: potentialMatches, 
+    data: recommendations, 
     isLoading, 
     isError, 
     refetch 
-  } = useGetPotentialMatchesQuery({
+  } = useGetRecommendationsQuery({
+    userId,
     limit: 10,
-    // Any additional filter params needed
+    includeDetails: true
+  }, {
+    skip: !userId
   });
   
   // Mutation hook for swiping (like/pass)
@@ -76,6 +92,10 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        // Record start time when user begins to interact with a profile
+        setSwipeStartTime(Date.now());
+      },
       onPanResponderMove: (_, gesture) => {
         position.setValue({ x: gesture.dx, y: gesture.dy });
       },
@@ -86,10 +106,17 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
           swipeLeft();
         } else {
           resetPosition();
+          setSwipeStartTime(null); // Reset if not a full swipe
         }
       },
     })
   ).current;
+  
+  // Track when user views a new profile
+  useEffect(() => {
+    setViewStartTime(Date.now());
+    setViewedSections([]);
+  }, [currentIndex]);
   
   // Reset card position animation
   const resetPosition = () => {
@@ -98,6 +125,27 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
       friction: 5,
       useNativeDriver: true,
     }).start();
+  };
+  
+  // Record user viewing a specific section
+  const recordSectionView = (section: string) => {
+    if (!viewedSections.includes(section)) {
+      setViewedSections(prev => [...prev, section]);
+    }
+  };
+  
+  // Collect behavioral data for swipe
+  const collectSwipeMetadata = (direction: 'left' | 'right' | 'up') => {
+    const endTime = Date.now();
+    const swipeTime = swipeStartTime ? endTime - swipeStartTime : 0;
+    const profileViewDuration = endTime - viewStartTime;
+    
+    return {
+      swipeTime,
+      profileViewDuration,
+      viewedSections,
+      direction
+    };
   };
   
   // Swipe right (like) animation and logic
@@ -138,24 +186,28 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
   
   // Handle swipe API call
   const handleSwipe = async (direction: 'left' | 'right' | 'up', isSuperLike: boolean = false) => {
-    if (!potentialMatches || potentialMatches.length <= currentIndex) return;
+    if (!recommendations || recommendations.length <= currentIndex || !userId) return;
     
-    const currentProfile = potentialMatches[currentIndex];
+    const currentProfile = recommendations[currentIndex];
+    const metadata = collectSwipeMetadata(direction);
     
     try {
       const result = await swipeProfile({
-        userId: currentProfile.id,
+        userId,
+        targetUserId: currentProfile.userId,
         direction,
         isSuperLike,
+        metadata
       }).unwrap();
       
       // Handle match result
-      if (result.isMatch) {
+      if (result.match) {
         setMatchedUser(currentProfile);
         setMatchAnimation(true);
       }
       
-      // Move to next profile
+      // Reset tracking data and move to next profile
+      setSwipeStartTime(null);
       setCurrentIndex(prevIndex => prevIndex + 1);
     } catch (error) {
       Alert.alert('Error', 'Something went wrong while processing your swipe');
@@ -164,11 +216,11 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
   
   // Refresh profiles when reaching the end
   useEffect(() => {
-    if (potentialMatches && currentIndex >= potentialMatches.length - 2) {
+    if (recommendations && currentIndex >= recommendations.length - 2) {
       setIsRefreshing(true);
       refetch().finally(() => setIsRefreshing(false));
     }
-  }, [currentIndex, potentialMatches, refetch]);
+  }, [currentIndex, recommendations, refetch]);
   
   // Get card rotation and opacity styles based on position
   const getCardStyle = () => {
@@ -244,6 +296,13 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
     );
   };
   
+  // Render compatibility badge
+  const renderCompatibilityBadge = (score: number) => (
+    <View style={styles.compatibilityBadge}>
+      <Text style={styles.compatibilityText}>{score}% Match</Text>
+    </View>
+  );
+  
   // Render profile card
   const renderCard = (profile: PotentialMatch, index: number) => {
     // Only render cards that are currentIndex or next in stack (for performance)
@@ -276,9 +335,16 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
         <Image
           source={{ uri: profile.photos[0] }}
           style={styles.cardImage}
+          onLoad={() => recordSectionView('photo')}
         />
         
-        <View style={styles.cardContent}>
+        {/* Compatibility score badge */}
+        {isCurrentCard && renderCompatibilityBadge(profile.compatibilityScore)}
+        
+        <View 
+          style={styles.cardContent}
+          onTouchStart={() => recordSectionView('content')}
+        >
           <View style={styles.nameContainer}>
             <Text style={styles.nameText}>{profile.name}, {profile.age}</Text>
             {profile.verified && (
@@ -288,11 +354,42 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
           
           <Text style={styles.distanceText}>{profile.distance} miles away</Text>
           
-          <Text style={styles.bioText}>{profile.bio}</Text>
+          <Text 
+            style={styles.bioText}
+            onTouchStart={() => recordSectionView('bio')}
+          >{profile.bio}</Text>
           
-          <View style={styles.interestsContainer}>
+          {/* Common Interests Section */}
+          {profile.commonInterests && profile.commonInterests.length > 0 && (
+            <View 
+              style={styles.commonInterestsContainer}
+              onTouchStart={() => recordSectionView('commonInterests')}
+            >
+              <Text style={styles.commonInterestsTitle}>Common Interests</Text>
+              <View style={styles.interestsContainer}>
+                {profile.commonInterests.map((interest, i) => (
+                  <View key={i} style={[styles.interestBadge, styles.commonInterestBadge]}>
+                    <Text style={styles.interestText}>{interest}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+          
+          {/* All Interests Section */}
+          <View 
+            style={styles.interestsContainer}
+            onTouchStart={() => recordSectionView('interests')}
+          >
+            <Text style={styles.interestsTitle}>Interests</Text>
             {profile.interests.map((interest, i) => (
-              <View key={i} style={styles.interestBadge}>
+              <View 
+                key={i} 
+                style={[
+                  styles.interestBadge,
+                  profile.commonInterests?.includes(interest) ? styles.commonInterestBadge : {}
+                ]}
+              >
                 <Text style={styles.interestText}>{interest}</Text>
               </View>
             ))}
@@ -361,7 +458,7 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
             onPress={() => {
               setMatchAnimation(false);
               navigation.navigate('ChatDetail', {
-                matchId: matchedUser.id,
+                matchId: matchedUser.userId,
                 userName: matchedUser.name,
               });
             }}
@@ -427,16 +524,16 @@ const DiscoverScreen: React.FC<DiscoverScreenProps> = ({ navigation }) => {
   return (
     <View style={styles.container}>
       {/* Card stack */}
-      {potentialMatches && potentialMatches.length > 0 ? (
-        potentialMatches.map((profile, index) => renderCard(profile, index))
+      {recommendations && recommendations.length > 0 ? (
+        recommendations.map((profile, index) => renderCard(profile, index))
       ) : (
         renderEmptyState()
       )}
       
       {/* Action buttons */}
-      {potentialMatches && 
-       potentialMatches.length > 0 && 
-       currentIndex < potentialMatches.length && 
+      {recommendations && 
+       recommendations.length > 0 && 
+       currentIndex < recommendations.length && 
        renderButtons()}
       
       {/* Match animation overlay */}
@@ -463,12 +560,13 @@ const styles = StyleSheet.create({
   },
   cardImage: {
     width: '100%',
-    height: '70%',
+    height: '60%',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
   cardContent: {
     padding: spacing.md,
+    height: '40%',
   },
   nameContainer: {
     flexDirection: 'row',
@@ -491,9 +589,25 @@ const styles = StyleSheet.create({
     color: neutralColors.gray800,
     marginBottom: spacing.md,
   },
+  interestsTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.medium,
+    color: neutralColors.gray800,
+    marginBottom: spacing.xs,
+  },
+  commonInterestsTitle: {
+    fontSize: typography.fontSize.md,
+    fontWeight: typography.fontWeight.medium,
+    color: primaryColors.primary,
+    marginBottom: spacing.xs,
+  },
+  commonInterestsContainer: {
+    marginBottom: spacing.md,
+  },
   interestsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    marginBottom: spacing.md,
   },
   interestBadge: {
     backgroundColor: neutralColors.gray200,
@@ -503,9 +617,29 @@ const styles = StyleSheet.create({
     marginRight: spacing.xs,
     marginBottom: spacing.xs,
   },
+  commonInterestBadge: {
+    backgroundColor: primaryColors.primary + '20', // 20% opacity
+    borderWidth: 1,
+    borderColor: primaryColors.primary,
+  },
   interestText: {
     fontSize: typography.fontSize.sm,
     color: neutralColors.gray800,
+  },
+  compatibilityBadge: {
+    position: 'absolute',
+    top: 20,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 20,
+    zIndex: 10,
+  },
+  compatibilityText: {
+    color: neutralColors.white,
+    fontWeight: typography.fontWeight.bold,
+    fontSize: typography.fontSize.md,
   },
   overlayContainer: {
     position: 'absolute',
