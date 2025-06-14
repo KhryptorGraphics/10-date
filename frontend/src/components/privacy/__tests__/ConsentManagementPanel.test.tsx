@@ -5,13 +5,13 @@ import ConsentManagementPanel from '../ConsentManagementPanel';
 import { PrivacyService } from '../../../services/privacy.service';
 
 // Mock the privacy service
-jest.mock('../../../services/privacy.service');
-const mockedPrivacyService = PrivacyService as jest.Mocked<typeof PrivacyService>;
+vi.mock('../../../services/privacy.service');
+const mockedPrivacyService = PrivacyService as any;
 
 describe('ConsentManagementPanel Component', () => {
   beforeEach(() => {
     // Reset mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     
     // Mock the getConsentPreferences method
     mockedPrivacyService.getConsentPreferences.mockResolvedValue([

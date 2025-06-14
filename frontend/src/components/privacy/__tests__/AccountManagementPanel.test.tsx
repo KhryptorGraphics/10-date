@@ -6,15 +6,15 @@ import { PrivacyService } from '../../../services/privacy.service';
 import { AuthService } from '../../../services/auth.service';
 
 // Mock the privacy service and auth service
-jest.mock('../../../services/privacy.service');
-jest.mock('../../../services/auth.service');
-const mockedPrivacyService = PrivacyService as jest.Mocked<typeof PrivacyService>;
-const mockedAuthService = AuthService as jest.Mocked<typeof AuthService>;
+vi.mock('../../../services/privacy.service');
+vi.mock('../../../services/auth.service');
+const mockedPrivacyService = PrivacyService as vi.Mocked<typeof PrivacyService>;
+const mockedAuthService = AuthService as vi.Mocked<typeof AuthService>;
 
 describe('AccountManagementPanel Component', () => {
   beforeEach(() => {
     // Reset mocks before each test
-    jest.clearAllMocks();
+    vi.clearAllMocks();
     
     // Mock the getAccountInfo method
     mockedPrivacyService.getAccountInfo.mockResolvedValue({
